@@ -7,12 +7,62 @@ Developer: @RekiReze
 import os
 import logging
 import asyncio
+import urllib.parse
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from shazamio import Shazam
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_https_url(url: Optional[str]) -> Optional[str]:
+    """Ensure URL starts with http:// or https://, otherwise return None."""
+    if not url:
+        return None
+    url = str(url).strip()
+    if url.startswith("https://") or url.startswith("http://"):
+        return url
+    if url.startswith("//"):
+        return "https:" + url
+    return None
+
+
+def format_spotify_url(uri: Optional[str], query: str) -> str:
+    """Convert Spotify URI or raw string into a valid https://open.spotify.com URL."""
+    if uri:
+        uri = str(uri).strip()
+        if uri.startswith("https://open.spotify.com/"):
+            return uri
+        if uri.startswith("spotify:track:"):
+            track_id = uri.split(":")[-1]
+            return f"https://open.spotify.com/track/{track_id}"
+        if uri.startswith("spotify:search:"):
+            search_param = uri.split(":", 2)[-1]
+            return f"https://open.spotify.com/search/{search_param}"
+    encoded = urllib.parse.quote(query)
+    return f"https://open.spotify.com/search/{encoded}"
+
+
+def format_apple_music_url(uri: Optional[str]) -> Optional[str]:
+    """Convert Apple Music URI into a valid https:// URL."""
+    if not uri:
+        return None
+    uri = str(uri).strip()
+    if uri.startswith("https://") or uri.startswith("http://"):
+        return uri
+    if uri.startswith("itmss://"):
+        return "https://" + uri[8:]
+    return None
+
+
+def format_youtube_url(url: Optional[str], query: str) -> str:
+    """Ensure YouTube URL is a valid https:// URL."""
+    valid_url = sanitize_https_url(url)
+    if valid_url:
+        return valid_url
+    encoded = urllib.parse.quote_plus(query)
+    return f"https://www.youtube.com/results?search_query={encoded}"
 
 
 @dataclass
@@ -37,48 +87,57 @@ class TrackInfo:
             return f"{self.artist} - {self.title}"
         return self.title
 
+    def get_clean_youtube_url(self) -> str:
+        return format_youtube_url(self.youtube_url, self.search_query)
+
+    def get_clean_spotify_url(self) -> str:
+        return format_spotify_url(self.spotify_url, self.search_query)
+
+    def get_clean_apple_music_url(self) -> Optional[str]:
+        return format_apple_music_url(self.apple_music_url)
+
+    def get_clean_shazam_url(self) -> Optional[str]:
+        return sanitize_https_url(self.shazam_url)
+
     def format_links_html(self) -> str:
         """Format streaming service links into clean HTML bullet points."""
         links: List[str] = []
-        if self.youtube_url:
-            links.append(f'• <a href="{self.youtube_url}">YouTube Music / Video</a>')
-        else:
-            query_enc = self.search_query.replace(' ', '+')
-            links.append(f'• <a href="https://www.youtube.com/results?search_query={query_enc}">YouTube Search</a>')
+        yt = self.get_clean_youtube_url()
+        sp = self.get_clean_spotify_url()
+        am = self.get_clean_apple_music_url()
+        sh = self.get_clean_shazam_url()
 
-        if self.spotify_url:
-            links.append(f'• <a href="{self.spotify_url}">Spotify</a>')
-        else:
-            query_enc = self.search_query.replace(' ', '%20')
-            links.append(f'• <a href="https://open.spotify.com/search/{query_enc}">Spotify Search</a>')
+        links.append(f'• <a href="{yt}">YouTube Music / Video</a>')
+        links.append(f'• <a href="{sp}">Spotify</a>')
+        if am:
+            links.append(f'• <a href="{am}">Apple Music</a>')
+        if sh:
+            links.append(f'• <a href="{sh}">Shazam</a>')
 
-        if self.apple_music_url:
-            links.append(f'• <a href="{self.apple_music_url}">Apple Music</a>')
-
-        if self.shazam_url:
-            links.append(f'• <a href="{self.shazam_url}">Shazam</a>')
-
-        return "\n".join(links) if links else "• <i>No direct streaming links found</i>"
+        return "\n".join(links)
 
     def build_inline_keyboard(self) -> InlineKeyboardMarkup:
-        """Build clickable inline buttons to listen on various platforms."""
+        """Build clickable inline buttons with guaranteed valid HTTPS URLs."""
         keyboard: List[List[InlineKeyboardButton]] = []
         row1: List[InlineKeyboardButton] = []
 
-        # YouTube link
-        yt = self.youtube_url or f"https://www.youtube.com/results?search_query={self.search_query.replace(' ', '+')}"
-        row1.append(InlineKeyboardButton("🔴 YouTube", url=yt))
+        yt = self.get_clean_youtube_url()
+        sp = self.get_clean_spotify_url()
+        am = self.get_clean_apple_music_url()
+        sh = self.get_clean_shazam_url()
 
-        # Spotify link
-        sp = self.spotify_url or f"https://open.spotify.com/search/{self.search_query.replace(' ', '%20')}"
-        row1.append(InlineKeyboardButton("🟢 Spotify", url=sp))
-        keyboard.append(row1)
+        if yt and yt.startswith("http"):
+            row1.append(InlineKeyboardButton("🔴 YouTube", url=yt))
+        if sp and sp.startswith("http"):
+            row1.append(InlineKeyboardButton("🟢 Spotify", url=sp))
+        if row1:
+            keyboard.append(row1)
 
         row2: List[InlineKeyboardButton] = []
-        if self.apple_music_url:
-            row2.append(InlineKeyboardButton("🍎 Apple Music", url=self.apple_music_url))
-        if self.shazam_url:
-            row2.append(InlineKeyboardButton("🔵 Shazam", url=self.shazam_url))
+        if am and am.startswith("http"):
+            row2.append(InlineKeyboardButton("🍎 Apple Music", url=am))
+        if sh and sh.startswith("http"):
+            row2.append(InlineKeyboardButton("🔵 Shazam", url=sh))
         if row2:
             keyboard.append(row2)
 
@@ -182,6 +241,7 @@ class MusicRecognizer:
         # High resolution cover art
         images = track.get('images', {})
         cover_url = images.get('coverarthq') or images.get('coverart') or images.get('background')
+        cover_url = sanitize_https_url(cover_url)
 
         # Genres
         genres = track.get('genres', {})
@@ -201,7 +261,7 @@ class MusicRecognizer:
                         release_year = meta.get('text', release_year)
 
         # Links
-        shazam_url = track.get('url')
+        shazam_url = sanitize_https_url(track.get('url'))
         apple_music_url = None
         youtube_url = None
         spotify_url = None

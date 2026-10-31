@@ -394,6 +394,7 @@ async def process_music_request(update: Update, context: ContextTypes.DEFAULT_TY
             keyboard = track.build_inline_keyboard()
 
             # 5. Deliver Song Information & Cover Art
+            sent = False
             if track.cover_url:
                 try:
                     await message.reply_photo(
@@ -402,19 +403,24 @@ async def process_music_request(update: Update, context: ContextTypes.DEFAULT_TY
                         parse_mode="HTML",
                         reply_markup=keyboard
                     )
+                    sent = True
                 except Exception as e:
-                    logger.warning(f"Failed to send cover photo ({e}), falling back to text reply.")
+                    logger.warning(f"Failed to send cover photo with keyboard ({e}), trying text...")
+
+            if not sent:
+                try:
                     await message.reply_html(
                         delivery_text,
                         reply_markup=keyboard,
                         disable_web_page_preview=False
                     )
-            else:
-                await message.reply_html(
-                    delivery_text,
-                    reply_markup=keyboard,
-                    disable_web_page_preview=False
-                )
+                    sent = True
+                except Exception as e:
+                    logger.warning(f"Failed to send text with keyboard ({e}), retrying without keyboard...")
+                    await message.reply_html(
+                        delivery_text,
+                        disable_web_page_preview=False
+                    )
 
             # Delete the temporary status message
             try:
@@ -430,10 +436,10 @@ async def process_music_request(update: Update, context: ContextTypes.DEFAULT_TY
                 album=track.album,
                 genre=track.genre,
                 cover_url=track.cover_url,
-                youtube_url=track.youtube_url,
-                spotify_url=track.spotify_url,
-                apple_music_url=track.apple_music_url,
-                shazam_url=track.shazam_url
+                youtube_url=track.get_clean_youtube_url(),
+                spotify_url=track.get_clean_spotify_url(),
+                apple_music_url=track.get_clean_apple_music_url(),
+                shazam_url=track.get_clean_shazam_url()
             )
 
             await async_register_or_update_user(user.id, user.username, user.full_name, is_success=True)
