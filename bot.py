@@ -62,7 +62,9 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 ADMIN_USER_IDS = [int(x.strip()) for x in os.getenv("ADMIN_USER_IDS", "").split(",") if x.strip().isdigit()]
 MAX_CONCURRENT_TASKS = int(os.getenv("MAX_CONCURRENT_TASKS", "20"))
-MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "20"))
+LOCAL_BOT_API_URL = os.getenv("LOCAL_BOT_API_URL")
+DEFAULT_MAX_MB = 2000 if LOCAL_BOT_API_URL else 20
+MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", str(DEFAULT_MAX_MB)))
 MAINTENANCE_MODE = os.getenv("MAINTENANCE_MODE", "false").lower() == "true"
 UPDATE_MODE = os.getenv("UPDATE_MODE", "false").lower() == "true"
 
@@ -303,6 +305,7 @@ async def process_music_request(update: Update, context: ContextTypes.DEFAULT_TY
     async with task_semaphore:
         status_msg = None
         temp_input_path = None
+        input_media_path = None
         input_type = "unknown"
 
         try:
@@ -367,21 +370,28 @@ async def process_music_request(update: Update, context: ContextTypes.DEFAULT_TY
                     await status_msg.edit_text(t('song_not_found', lang), parse_mode="HTML")
                     await async_log_search(user.id, input_type, status="failed", error_message="URL audio extraction failed")
                     return
+                input_media_path = temp_input_path
             else:
                 temp_input_path = os.path.abspath(os.path.join(extractor.download_dir, f"input_{uid}{ext}"))
                 try:
                     tg_file = await context.bot.get_file(file_id)
-                    await tg_file.download_to_drive(custom_path=temp_input_path)
+                    # If local Telegram Bot API is running in local mode, file_path is already on disk
+                    if tg_file.file_path and os.path.exists(tg_file.file_path):
+                        input_media_path = tg_file.file_path
+                        logger.info(f"⚡ Using local direct disk file: {input_media_path}")
+                    else:
+                        await tg_file.download_to_drive(custom_path=temp_input_path)
+                        input_media_path = temp_input_path
                 except BadRequest as e:
                     if "file is too big" in str(e).lower():
-                        logger.warning(f"Telegram file {file_id} exceeds 20MB download limit.")
+                        logger.warning(f"Telegram file {file_id} exceeds {MAX_FILE_SIZE_MB}MB download limit.")
                         await status_msg.edit_text(t('file_too_large', lang, max_size=MAX_FILE_SIZE_MB), parse_mode="HTML")
                         await async_log_search(user.id, input_type, status="file_too_large", error_message=str(e))
                         return
                     raise
 
             # 3. Acoustic fingerprinting via ShazamIO
-            track: Optional[TrackInfo] = await recognizer.recognize(temp_input_path)
+            track: Optional[TrackInfo] = await recognizer.recognize(input_media_path)
 
             if not track:
                 await status_msg.edit_text(t('song_not_found', lang), parse_mode="HTML")
@@ -502,7 +512,9 @@ def main():
 
     logger.info("Starting Reki Music Recognition Bot...")
 
-    application = (
+    local_api_url = os.getenv('LOCAL_BOT_API_URL')
+
+    builder = (
         Application.builder()
         .token(TOKEN)
         .concurrent_updates(True)
@@ -511,8 +523,13 @@ def main():
         .connect_timeout(180)
         .pool_timeout(180)
         .post_init(post_init)
-        .build()
     )
+
+    if local_api_url:
+        logger.info(f"🌐 Local Telegram Bot API enabled: {local_api_url} (2GB upload/download limit active)")
+        builder.base_url(local_api_url).local_mode(True)
+
+    application = builder.build()
 
     # Command handlers
     application.add_handler(CommandHandler("start", start_handler))

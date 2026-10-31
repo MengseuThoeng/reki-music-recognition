@@ -19,6 +19,9 @@ temp/
 *.ogg
 *.m4a
 
+# Telegram Local Bot API Cache
+telegram-bot-api-data/
+
 # SQLite Databases & data dir
 data/
 *.db
