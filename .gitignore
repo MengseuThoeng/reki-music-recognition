@@ -1,0 +1,35 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Temporary audio/video downloads and snippets
+downloads/
+temp/
+*.mp4
+*.mp3
+*.wav
+*.ogg
+*.m4a
+
+# SQLite Databases & data dir
+data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+
+# Docker & IDE
+.vscode/
+.idea/
