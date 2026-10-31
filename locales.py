@@ -98,8 +98,10 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         ),
         'file_too_large': (
             "❌ <b>File ធំពេក (លើស {max_size}MB)!</b>\n\n"
-            "Telegram Bot API កម្រិតមិនឱ្យលើសពី {max_size}MB ឡើយ។\n"
-            "សូមកាត់ជាកំណាត់ខ្លីត្រឹម 10-30 វិនាទី រួចផ្ញើមកម្ដងទៀត។"
+            "Telegram Bot API កម្រិតមិនឱ្យ Bot ទាញយក File ដែលមានទំហំលើសពី {max_size}MB ឡើយ។\n\n"
+            "💡 <b>ដំណោះស្រាយងាយៗ:</b>\n"
+            "• កាត់វីដេអូ ឬសំឡេងនោះឱ្យខ្លីត្រឹម 5-15 វិនាទី រួចផ្ញើមកម្ដងទៀត\n"
+            "• ឬ Record ជា <b>Voice Note</b> ផ្ទាល់ក្នុង Telegram យ៉ាងតិច 3-5 វិនាទី! 🎧"
         ),
         'error_general': (
             "⚠️ <b>មានបញ្ហាបច្ចេកទេសមួយបានកើតឡើង!</b>\n\n"
@@ -206,9 +208,11 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
             "Press /help for more information."
         ),
         'file_too_large': (
-            "❌ <b>File too large (exceeds {max_size}MB)!</b>\n\n"
-            "Telegram Bot API limits file uploads to {max_size}MB.\n"
-            "Please trim the audio/video to a 10-30 second snippet and try again."
+            "❌ <b>File is too large (exceeds {max_size}MB)!</b>\n\n"
+            "Telegram Bot API does not allow bots to download files larger than {max_size}MB.\n\n"
+            "💡 <b>Quick Solution:</b>\n"
+            "• Trim the video or audio to a short 5-15 second snippet and send it again\n"
+            "• Or record a quick <b>Voice Note</b> directly in Telegram! 🎧"
         ),
         'error_general': (
             "⚠️ <b>A technical error occurred!</b>\n\n"

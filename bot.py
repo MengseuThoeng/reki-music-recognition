@@ -62,7 +62,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 ADMIN_USER_IDS = [int(x.strip()) for x in os.getenv("ADMIN_USER_IDS", "").split(",") if x.strip().isdigit()]
 MAX_CONCURRENT_TASKS = int(os.getenv("MAX_CONCURRENT_TASKS", "20"))
-MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "50"))
+MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "20"))
 MAINTENANCE_MODE = os.getenv("MAINTENANCE_MODE", "false").lower() == "true"
 UPDATE_MODE = os.getenv("UPDATE_MODE", "false").lower() == "true"
 
@@ -353,9 +353,10 @@ async def process_music_request(update: Update, context: ContextTypes.DEFAULT_TY
                 await status_msg.edit_text(t('invalid_input', lang), parse_mode="HTML")
                 return
 
-            # Check file size limit
-            if file_size > MAX_FILE_SIZE_MB * 1024 * 1024:
+            # Check file size limit (Telegram Bot API getFile download limit is 20MB)
+            if file_size and file_size > MAX_FILE_SIZE_MB * 1024 * 1024:
                 await status_msg.edit_text(t('file_too_large', lang, max_size=MAX_FILE_SIZE_MB), parse_mode="HTML")
+                await async_log_search(user.id, input_type, status="file_too_large", error_message=f"Size: {file_size}")
                 return
 
             # 2. Acquire media on disk
@@ -368,8 +369,16 @@ async def process_music_request(update: Update, context: ContextTypes.DEFAULT_TY
                     return
             else:
                 temp_input_path = os.path.abspath(os.path.join(extractor.download_dir, f"input_{uid}{ext}"))
-                tg_file = await context.bot.get_file(file_id)
-                await tg_file.download_to_drive(custom_path=temp_input_path)
+                try:
+                    tg_file = await context.bot.get_file(file_id)
+                    await tg_file.download_to_drive(custom_path=temp_input_path)
+                except BadRequest as e:
+                    if "file is too big" in str(e).lower():
+                        logger.warning(f"Telegram file {file_id} exceeds 20MB download limit.")
+                        await status_msg.edit_text(t('file_too_large', lang, max_size=MAX_FILE_SIZE_MB), parse_mode="HTML")
+                        await async_log_search(user.id, input_type, status="file_too_large", error_message=str(e))
+                        return
+                    raise
 
             # 3. Acoustic fingerprinting via ShazamIO
             track: Optional[TrackInfo] = await recognizer.recognize(temp_input_path)
@@ -449,7 +458,11 @@ async def process_music_request(update: Update, context: ContextTypes.DEFAULT_TY
             logger.error(f"Error processing music request: {e}", exc_info=True)
             if status_msg:
                 try:
-                    await status_msg.edit_text(t('error_general', lang), parse_mode="HTML")
+                    err_msg = str(e).lower()
+                    if "file is too big" in err_msg:
+                        await status_msg.edit_text(t('file_too_large', lang, max_size=MAX_FILE_SIZE_MB), parse_mode="HTML")
+                    else:
+                        await status_msg.edit_text(t('error_general', lang), parse_mode="HTML")
                 except Exception:
                     pass
             await async_log_search(user.id, input_type, status="error", error_message=str(e))
